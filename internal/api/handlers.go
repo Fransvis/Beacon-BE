@@ -23,6 +23,7 @@ type ScamRepository interface {
 	FindSimilarScams(ctx context.Context, scamID uuid.UUID, limit int) ([]models.Scam, error)
 	AddScamReport(ctx context.Context, report *models.ScamReport) error
 	GetScamStatistics(ctx context.Context) (map[string]interface{}, error)
+	GetScamTypes(ctx context.Context) ([]models.ScamType, error)
 }
 
 func NewHandler(scamRepo ScamRepository) *Handler {
@@ -276,18 +277,15 @@ func (h *Handler) ReportScam(c *gin.Context) {
 		dateOccurred = *req.DateOccurred
 	}
 
-	location := models.Location{}
-	if req.Location != nil {
-		location = *req.Location
-	}
-
 	report := &models.ScamReport{
 		ScamID:        id,
 		ReporterEmail: req.ReporterEmail,
 		Description:   req.Description,
 		LossAmount:    req.LossAmount,
 		DateOccurred:  dateOccurred,
-		Location:      location,
+		City:          req.City,
+		Province:      req.Province,
+		Country:       req.Country,
 		Status:        "PENDING",
 	}
 
@@ -297,6 +295,16 @@ func (h *Handler) ReportScam(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, report)
+}
+
+// GetScamTypes returns all rows from the scam_types lookup table.
+func (h *Handler) GetScamTypes(c *gin.Context) {
+	types, err := h.scamRepo.GetScamTypes(c)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get scam types"})
+		return
+	}
+	c.JSON(http.StatusOK, types)
 }
 
 // GetStatistics godoc

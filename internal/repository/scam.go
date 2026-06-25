@@ -354,8 +354,9 @@ func (r *ScamRepository) AddScamReport(ctx context.Context, report *models.ScamR
 	reportQuery := `
 		INSERT INTO scam_reports (
 			id, scam_id, reporter_email, description,
-			loss_amount, date_occurred, status, created_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+			loss_amount, date_occurred, city, province, country,
+			status, created_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		RETURNING id`
 
 	err = tx.QueryRowContext(
@@ -367,6 +368,9 @@ func (r *ScamRepository) AddScamReport(ctx context.Context, report *models.ScamR
 		report.Description,
 		report.LossAmount,
 		report.DateOccurred,
+		report.City,
+		report.Province,
+		report.Country,
 		report.Status,
 		time.Now(),
 	).Scan(&report.ID)
@@ -397,6 +401,13 @@ func (r *ScamRepository) AddScamReport(ctx context.Context, report *models.ScamR
 	}
 
 	return tx.Commit()
+}
+
+// GetScamTypes returns all rows from the scam_types lookup table.
+func (r *ScamRepository) GetScamTypes(ctx context.Context) ([]models.ScamType, error) {
+	var types []models.ScamType
+	err := r.db.SelectContext(ctx, &types, `SELECT slug, label, description, icon, created_at FROM scam_types ORDER BY label`)
+	return types, err
 }
 
 // GetScamStatistics retrieves statistics about scams
@@ -434,10 +445,10 @@ func (r *ScamRepository) GetScamStatistics(ctx context.Context) (map[string]inte
 	}
 
 	return map[string]interface{}{
-		"total_scams":    totalScams,
-		"total_reports":  totalReports,
-		"total_losses":   totalLosses,
-		"scams_by_type":  scamsByType,
+		"total_scams":     totalScams,
+		"total_reports":   totalReports,
+		"total_losses":    totalLosses,
+		"scams_by_type":   scamsByType,
 		"scams_by_status": scamsByStatus,
 	}, nil
 }

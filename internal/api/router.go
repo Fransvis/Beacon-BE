@@ -34,6 +34,9 @@ func SetupRouter(h *Handler) *gin.Engine {
 			scams.POST("/:id/report", h.ReportScam)
 		}
 
+		// Scam types lookup
+		v1.GET("/types", h.GetScamTypes)
+
 		// Statistics
 		v1.GET("/statistics", h.GetStatistics)
 

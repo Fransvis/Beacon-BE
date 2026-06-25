@@ -6,6 +6,15 @@ import (
 	"github.com/gofrs/uuid"
 )
 
+// ScamType is a row from the scam_types lookup table.
+type ScamType struct {
+	Slug        string    `json:"slug" db:"slug"`
+	Label       string    `json:"label" db:"label"`
+	Description *string   `json:"description,omitempty" db:"description"`
+	Icon        *string   `json:"icon,omitempty" db:"icon"`
+	CreatedAt   time.Time `json:"createdAt" db:"created_at"`
+}
+
 type RiskLevel string
 
 const (
@@ -81,10 +90,9 @@ type Scam struct {
 	Evidence           []Evidence            `json:"evidence" db:"-"`
 	VerificationStatus *string               `json:"verificationStatus,omitempty" db:"verification_status"`
 
-	// AI-related fields
-	SimilarityVector []float32 `json:"similarityVector,omitempty" db:"-"`
-	Keywords         []string  `json:"keywords" db:"-"`
-	ScamPattern      *string   `json:"scamPattern,omitempty" db:"scam_pattern"`
+	// Search / AI fields
+	Keywords    []string `json:"keywords" db:"-"`
+	ScamPattern *string  `json:"scamPattern,omitempty" db:"scam_pattern"`
 
 	// Metadata
 	CreatedAt      *time.Time `json:"createdAt,omitempty" db:"created_at"`
@@ -94,15 +102,16 @@ type Scam struct {
 }
 
 type ScamReport struct {
-	ID             uuid.UUID       `json:"id"`
-	ScamID         uuid.UUID       `json:"scamId"`
-	ReporterEmail  string          `json:"reporterEmail"`
-	Description    string          `json:"description"`
-	LossAmount     float64         `json:"lossAmount"`
-	DateOccurred   time.Time       `json:"dateOccurred"`
-	Location       Location        `json:"location"`
-	ContactMethods []ContactMethod `json:"contactMethods"`
-	Evidence       []Evidence      `json:"evidence"`
-	Status         string          `json:"status"` // "PENDING", "VERIFIED", "REJECTED"
-	CreatedAt      time.Time       `json:"createdAt"`
+	ID            uuid.UUID `json:"id" db:"id"`
+	ScamID        uuid.UUID `json:"scamId" db:"scam_id"`
+	ReporterEmail string    `json:"reporterEmail" db:"reporter_email"`
+	Description   string    `json:"description" db:"description"`
+	LossAmount    float64   `json:"lossAmount" db:"loss_amount"`
+	DateOccurred  time.Time `json:"dateOccurred" db:"date_occurred"`
+	// Flat location fields matching scam_reports table columns
+	City      *string   `json:"city,omitempty" db:"city"`
+	Province  *string   `json:"province,omitempty" db:"province"`
+	Country   *string   `json:"country,omitempty" db:"country"`
+	Status    string    `json:"status" db:"status"`
+	CreatedAt time.Time `json:"createdAt" db:"created_at"`
 }

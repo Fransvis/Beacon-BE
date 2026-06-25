@@ -17,16 +17,13 @@ type CreateScamRequest struct {
 }
 
 type ScamReportRequest struct {
-	ReporterEmail string           `json:"reporterEmail" binding:"required,email"`
-	Description   string           `json:"description" binding:"required"`
-	LossAmount    float64          `json:"lossAmount"`
-	DateOccurred  *time.Time       `json:"dateOccurred"`
-	Location      *models.Location `json:"location"`
-	Evidence      []struct {
-		Type        string `json:"type"`
-		URL         string `json:"url"`
-		Description string `json:"description"`
-	} `json:"evidence"`
+	ReporterEmail string     `json:"reporterEmail" binding:"required,email"`
+	Description   string     `json:"description" binding:"required"`
+	LossAmount    float64    `json:"lossAmount"`
+	DateOccurred  *time.Time `json:"dateOccurred"`
+	City          *string    `json:"city"`
+	Province      *string    `json:"province"`
+	Country       *string    `json:"country"`
 }
 
 type UpdateScamStatusRequest struct {

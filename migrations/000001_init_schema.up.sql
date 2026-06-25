@@ -7,12 +7,39 @@ CREATE TYPE risk_level AS ENUM ('LOW', 'MEDIUM', 'HIGH');
 CREATE TYPE verification_status AS ENUM ('VERIFIED', 'UNVERIFIED', 'DISPUTED');
 CREATE TYPE report_status AS ENUM ('PENDING', 'VERIFIED', 'REJECTED');
 
+-- Scam type lookup table (replaces free-text type on scams)
+CREATE TABLE scam_types (
+    slug        VARCHAR(100) PRIMARY KEY,
+    label       VARCHAR(150) NOT NULL,
+    description TEXT,
+    icon        VARCHAR(50),
+    created_at  TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+
+-- Seed known scam types
+INSERT INTO scam_types (slug, label, description) VALUES
+    ('sim-swap',          'SIM Swap',              'Criminals port your mobile number to take control of OTPs and banking.'),
+    ('phishing',          'Phishing',              'Fake emails, SMSes or websites that steal credentials or personal info.'),
+    ('investment-fraud',  'Investment Fraud',      'Ponzi schemes, fake trading platforms, and promises of high returns.'),
+    ('romance-scam',      'Romance Scam',          'Fraudsters build fake relationships online to extract money.'),
+    ('job-scam',          'Job Scam',              'Fake job offers requiring upfront fees or personal information.'),
+    ('crypto-scam',       'Crypto Scam',           'Fraudulent cryptocurrency platforms, wallets, or trading bots.'),
+    ('online-shopping',   'Online Shopping',       'Fake online stores or sellers that take payment and deliver nothing.'),
+    ('advance-fee',       'Advance Fee / 419',     'Requests for an upfront fee in exchange for a larger promised payout.'),
+    ('identity-theft',    'Identity Theft',        'Theft of personal information to commit fraud in your name.'),
+    ('vishing',           'Vishing',               'Voice call scams impersonating banks, SARS, or government agencies.'),
+    ('smishing',          'Smishing',              'SMS-based phishing targeting banking credentials or personal data.'),
+    ('rental-scam',       'Rental Scam',           'Fake rental listings that collect deposits for non-existent properties.'),
+    ('lottery-scam',      'Lottery / Prize Scam',  'Fake prize notifications requiring a fee to claim winnings.'),
+    ('tech-support-scam', 'Tech Support Scam',     'Fake IT support that gains remote access or charges for non-existent issues.'),
+    ('other',             'Other',                 'Scams that do not fit a standard category.');
+
 -- Create base tables
 CREATE TABLE scams (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     title VARCHAR(255) NOT NULL,
     description TEXT NOT NULL,
-    type VARCHAR(100) NOT NULL,
+    type VARCHAR(100) NOT NULL REFERENCES scam_types(slug) ON UPDATE CASCADE,
     report_count INT NOT NULL DEFAULT 0,
     date_first_reported TIMESTAMP WITH TIME ZONE NOT NULL,
     date_last_reported TIMESTAMP WITH TIME ZONE NOT NULL,
@@ -110,6 +137,10 @@ CREATE TABLE scam_reports (
     description TEXT NOT NULL,
     loss_amount DECIMAL(15,2),
     date_occurred TIMESTAMP WITH TIME ZONE NOT NULL,
+    -- Location of the reporter / where the scam occurred
+    city VARCHAR(100),
+    province VARCHAR(100),
+    country VARCHAR(100),
     status report_status NOT NULL DEFAULT 'PENDING',
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );
