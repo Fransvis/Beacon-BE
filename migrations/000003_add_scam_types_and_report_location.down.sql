@@ -1,0 +1,8 @@
+ALTER TABLE scam_reports
+    DROP COLUMN IF EXISTS city,
+    DROP COLUMN IF EXISTS province,
+    DROP COLUMN IF EXISTS country;
+
+ALTER TABLE scams DROP CONSTRAINT IF EXISTS scams_type_fkey;
+
+DROP TABLE IF EXISTS scam_types;

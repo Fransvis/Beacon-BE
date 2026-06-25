@@ -20,7 +20,8 @@ func main() {
 	var (
 		migrationsPath = flag.String("path", "file://migrations", "path to migrations files")
 		dbURL          = flag.String("db", "", "database connection string")
-		command        = flag.String("command", "", "migration command (up/down)")
+		command        = flag.String("command", "", "migration command (up/down/version/force)")
+		forceVersion   = flag.Int("version", -1, "version to force (used with force command)")
 	)
 
 	flag.Parse()
@@ -56,7 +57,23 @@ func main() {
 		}
 		log.Println("Migration down completed successfully")
 
+	case "version":
+		v, dirty, err := m.Version()
+		if err != nil {
+			log.Fatalf("Failed to get version: %v", err)
+		}
+		log.Printf("Current version: %d, dirty: %v", v, dirty)
+
+	case "force":
+		if *forceVersion < 0 {
+			log.Fatalf("force command requires -version flag")
+		}
+		if err := m.Force(*forceVersion); err != nil {
+			log.Fatalf("Force failed: %v", err)
+		}
+		log.Printf("Forced version to %d", *forceVersion)
+
 	default:
-		log.Fatalf("Invalid command. Use 'up' or 'down'")
+		log.Fatalf("Invalid command. Use 'up', 'down', 'version', or 'force'")
 	}
 }

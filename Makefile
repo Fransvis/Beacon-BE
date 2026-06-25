@@ -1,4 +1,4 @@
-.PHONY: run migrate-up migrate-down migrate-status build
+.PHONY: run migrate-up migrate-down migrate-status migrate-version migrate-force build
 
 run:
 	go run main.go
@@ -12,8 +12,11 @@ migrate-up:
 migrate-down:
 	go run cmd/migrate/main.go -command down
 
-migrate-status:
+migrate-version:
 	go run cmd/migrate/main.go -command version
+
+migrate-force:
+	go run cmd/migrate/main.go -command force -version $(v)
 
 test:
 	go test ./...
