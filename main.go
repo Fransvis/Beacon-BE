@@ -27,12 +27,14 @@ func main() {
 
 	// Initialize repositories
 	scamRepo := repository.NewScamRepository(db)
+	userRepo := repository.NewUserRepository(db)
 
 	// Initialize handlers
 	handler := api.NewHandler(scamRepo)
+	authHandler := api.NewAuthHandler(userRepo)
 
 	// Setup router
-	router := api.SetupRouter(handler)
+	router := api.SetupRouter(handler, authHandler)
 
 	// Start server
 	port := os.Getenv("API_PORT")

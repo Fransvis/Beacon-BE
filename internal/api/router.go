@@ -7,7 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func SetupRouter(h *Handler) *gin.Engine {
+func SetupRouter(h *Handler, auth *AuthHandler) *gin.Engine {
 	r := gin.Default()
 
 	// CORS configuration
@@ -19,6 +19,8 @@ func SetupRouter(h *Handler) *gin.Engine {
 	config.AllowOrigins = []string{allowedOrigin}
 	config.AllowMethods = []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}
 	config.AllowHeaders = []string{"Origin", "Content-Type", "Accept", "Authorization"}
+	config.AllowCredentials = true
+	config.ExposeHeaders = []string{"Authorization"}
 	r.Use(cors.New(config))
 
 	v1 := r.Group("")
@@ -33,6 +35,17 @@ func SetupRouter(h *Handler) *gin.Engine {
 			scams.GET("/:id/similar", h.FindSimilarScams)
 			scams.POST("/:id/report", h.ReportScam)
 			scams.POST("/:id/experienced", h.ExperiencedScam)
+		}
+
+		// Auth
+		authGroup := v1.Group("/auth")
+		{
+			authGroup.POST("/register", auth.Register)
+			authGroup.POST("/login", auth.Login)
+			authGroup.POST("/logout", auth.Logout)
+			authGroup.GET("/me", JWTMiddleware(), auth.Me)
+			authGroup.GET("/google", auth.GoogleLogin)
+			authGroup.GET("/google/callback", auth.GoogleCallback)
 		}
 
 		// Identifier lookup (SEO)
