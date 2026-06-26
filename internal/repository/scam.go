@@ -409,6 +409,26 @@ func (r *ScamRepository) AddScamReport(ctx context.Context, report *models.ScamR
 	return tx.Commit()
 }
 
+// LookupByIdentifier finds scams whose contact_methods match the given value.
+func (r *ScamRepository) LookupByIdentifier(ctx context.Context, identifier string) ([]models.Scam, error) {
+	query := `
+		SELECT DISTINCT
+			s.id, s.title, s.description, s.type, s.report_count,
+			s.date_first_reported, s.date_last_reported, s.status,
+			s.estimated_losses, s.primary_location, s.risk_level,
+			s.verification_status, s.scam_pattern,
+			s.created_at, s.updated_at, s.last_analyzed_at,
+			0 as rank
+		FROM scams s
+		JOIN contact_methods cm ON cm.scam_id = s.id
+		WHERE cm.value ILIKE $1
+		ORDER BY s.report_count DESC`
+
+	scams := make([]models.Scam, 0)
+	err := r.db.SelectContext(ctx, &scams, query, "%"+identifier+"%")
+	return scams, err
+}
+
 // IncrementReportCount bumps the report count and updates date_last_reported for a scam.
 func (r *ScamRepository) IncrementReportCount(ctx context.Context, id uuid.UUID) error {
 	_, err := r.db.ExecContext(ctx,

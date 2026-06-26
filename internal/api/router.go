@@ -35,6 +35,9 @@ func SetupRouter(h *Handler) *gin.Engine {
 			scams.POST("/:id/experienced", h.ExperiencedScam)
 		}
 
+		// Identifier lookup (SEO)
+		v1.GET("/lookup/:identifier", h.LookupScam)
+
 		// Scam types lookup
 		v1.GET("/types", h.GetScamTypes)
 

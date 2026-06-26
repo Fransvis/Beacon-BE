@@ -44,6 +44,7 @@ type ScamRepository interface {
 	FindSimilarScams(ctx context.Context, scamID uuid.UUID, limit int) ([]models.Scam, error)
 	AddScamReport(ctx context.Context, report *models.ScamReport) error
 	IncrementReportCount(ctx context.Context, id uuid.UUID) error
+	LookupByIdentifier(ctx context.Context, identifier string) ([]models.Scam, error)
 	GetScamStatistics(ctx context.Context) (map[string]interface{}, error)
 	GetScamTypes(ctx context.Context) ([]models.ScamType, error)
 }
@@ -317,6 +318,23 @@ func (h *Handler) ReportScam(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, report)
+}
+
+// LookupScam finds scams associated with a given contact identifier (phone, email, URL).
+func (h *Handler) LookupScam(c *gin.Context) {
+	identifier := c.Param("identifier")
+	if identifier == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "identifier is required"})
+		return
+	}
+
+	scams, err := h.scamRepo.LookupByIdentifier(c, identifier)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to lookup identifier"})
+		return
+	}
+
+	c.JSON(http.StatusOK, scams)
 }
 
 // ExperiencedScam increments the report count without requiring a full report.
