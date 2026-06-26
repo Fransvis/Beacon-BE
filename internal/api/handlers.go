@@ -34,7 +34,8 @@ func canVote(ip, scamID string) bool {
 }
 
 type Handler struct {
-	scamRepo ScamRepository
+	scamRepo    ScamRepository
+	commentRepo CommentRepository
 }
 
 type ScamRepository interface {
@@ -49,9 +50,16 @@ type ScamRepository interface {
 	GetScamTypes(ctx context.Context) ([]models.ScamType, error)
 }
 
-func NewHandler(scamRepo ScamRepository) *Handler {
+type CommentRepository interface {
+	Create(ctx context.Context, comment *models.Comment) error
+	GetByScamID(ctx context.Context, scamID uuid.UUID) ([]models.Comment, error)
+	CountByScamID(ctx context.Context, scamID uuid.UUID) (int, error)
+}
+
+func NewHandler(scamRepo ScamRepository, commentRepo CommentRepository) *Handler {
 	return &Handler{
-		scamRepo: scamRepo,
+		scamRepo:    scamRepo,
+		commentRepo: commentRepo,
 	}
 }
 
@@ -386,4 +394,67 @@ func (h *Handler) GetStatistics(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, stats)
+}
+
+// GetComments returns all comments for a scam.
+func (h *Handler) GetComments(c *gin.Context) {
+	id, err := uuid.FromString(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid scam ID"})
+		return
+	}
+
+	comments, err := h.commentRepo.GetByScamID(c, id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get comments"})
+		return
+	}
+
+	c.JSON(http.StatusOK, comments)
+}
+
+// CreateComment adds a comment to a scam. Authentication is optional.
+func (h *Handler) CreateComment(c *gin.Context) {
+	scamID, err := uuid.FromString(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid scam ID"})
+		return
+	}
+
+	var req struct {
+		Content     string `json:"content"      binding:"required,max=2000"`
+		AuthorName  string `json:"authorName"   binding:"max=100"`
+		IsAnonymous bool   `json:"isAnonymous"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	comment := &models.Comment{
+		ScamID:      scamID.String(),
+		Content:     req.Content,
+		IsAnonymous: req.IsAnonymous,
+	}
+
+	if userID, ok := c.Get("user_id"); ok {
+		uid := userID.(string)
+		comment.UserID = &uid
+		comment.IsAnonymous = false
+	}
+
+	if comment.IsAnonymous {
+		name := "Anonymous"
+		if req.AuthorName != "" {
+			name = req.AuthorName
+		}
+		comment.AuthorName = &name
+	}
+
+	if err := h.commentRepo.Create(c, comment); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create comment"})
+		return
+	}
+
+	c.JSON(http.StatusCreated, comment)
 }
