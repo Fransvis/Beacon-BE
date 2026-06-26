@@ -6,11 +6,32 @@ import (
 	"net/http"
 	"scam-directory/internal/models"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gofrs/uuid"
 )
+
+// experiencedRateLimiter tracks IP+scamID votes with a 24h window.
+var experiencedRateLimiter = struct {
+	mu    sync.Mutex
+	votes map[string]time.Time
+}{
+	votes: make(map[string]time.Time),
+}
+
+func canVote(ip, scamID string) bool {
+	key := ip + "|" + scamID
+	ttl := 24 * time.Hour
+	experiencedRateLimiter.mu.Lock()
+	defer experiencedRateLimiter.mu.Unlock()
+	if t, ok := experiencedRateLimiter.votes[key]; ok && time.Since(t) < ttl {
+		return false
+	}
+	experiencedRateLimiter.votes[key] = time.Now()
+	return true
+}
 
 type Handler struct {
 	scamRepo ScamRepository
@@ -22,6 +43,7 @@ type ScamRepository interface {
 	SearchScams(ctx context.Context, query string, limit int) ([]models.Scam, error)
 	FindSimilarScams(ctx context.Context, scamID uuid.UUID, limit int) ([]models.Scam, error)
 	AddScamReport(ctx context.Context, report *models.ScamReport) error
+	IncrementReportCount(ctx context.Context, id uuid.UUID) error
 	GetScamStatistics(ctx context.Context) (map[string]interface{}, error)
 	GetScamTypes(ctx context.Context) ([]models.ScamType, error)
 }
@@ -295,6 +317,29 @@ func (h *Handler) ReportScam(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, report)
+}
+
+// ExperiencedScam increments the report count without requiring a full report.
+// Rate-limited to one vote per IP per scam per 24 hours.
+func (h *Handler) ExperiencedScam(c *gin.Context) {
+	id, err := uuid.FromString(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid scam ID"})
+		return
+	}
+
+	ip := c.ClientIP()
+	if !canVote(ip, id.String()) {
+		c.JSON(http.StatusTooManyRequests, gin.H{"error": "Already counted"})
+		return
+	}
+
+	if err := h.scamRepo.IncrementReportCount(c, id); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update count"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
 // GetScamTypes returns all rows from the scam_types lookup table.

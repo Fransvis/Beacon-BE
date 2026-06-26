@@ -15,6 +15,16 @@ type ScamType struct {
 	CreatedAt   time.Time `json:"createdAt" db:"created_at"`
 }
 
+type MoneyDirection string
+
+const (
+	MoneyPaidScammer     MoneyDirection = "paid_scammer"
+	MoneyFakePaymentToMe MoneyDirection = "fake_payment_to_me"
+	MoneyUsedAsMule      MoneyDirection = "used_as_mule"
+	MoneyInfoOnly        MoneyDirection = "info_only"
+	MoneyDirectionOther  MoneyDirection = "other"
+)
+
 type RiskLevel string
 
 const (
@@ -89,6 +99,10 @@ type Scam struct {
 	RelatedScamIDs     []uuid.UUID           `json:"relatedScamIds" db:"-"`
 	Evidence           []Evidence            `json:"evidence" db:"-"`
 	VerificationStatus *string               `json:"verificationStatus,omitempty" db:"verification_status"`
+
+	// How money moved in this scam
+	MoneyDirection *MoneyDirection `json:"moneyDirection,omitempty" db:"money_direction"`
+	ScammerNames   []string        `json:"scammerNames" db:"-"`
 
 	// Search / AI fields
 	Keywords    []string `json:"keywords" db:"-"`

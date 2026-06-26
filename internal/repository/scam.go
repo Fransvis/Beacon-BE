@@ -275,25 +275,31 @@ func (r *ScamRepository) SearchScams(ctx context.Context, query string, limit in
 			LIMIT $1`
 		args = []interface{}{limit}
 	} else {
-		// If search query provided, use full-text search
+		// Combine full-text search with ILIKE prefix matching for partial words
 		searchQuery = `
-			SELECT DISTINCT 
+			SELECT DISTINCT
 				s.id, s.title, s.description, s.type, s.report_count,
 				s.date_first_reported, s.date_last_reported, s.status,
 				s.estimated_losses, s.primary_location, s.risk_level,
 				s.verification_status, s.scam_pattern,
 				s.created_at, s.updated_at, s.last_analyzed_at,
-				ts_rank(s.search_vector, plainto_tsquery('english', $1)) as rank
+				COALESCE(ts_rank(s.search_vector, plainto_tsquery('english', $1)), 0) as rank
 			FROM scams s
-			WHERE s.search_vector @@ plainto_tsquery('english', $1)
+			LEFT JOIN contact_methods cm ON cm.scam_id = s.id
+			WHERE
+				s.search_vector @@ plainto_tsquery('english', $1)
+				OR s.title ILIKE $2
+				OR s.description ILIKE $2
+				OR s.type ILIKE $2
+				OR cm.value ILIKE $2
 			ORDER BY rank DESC
-			LIMIT $2`
-		args = []interface{}{query, limit}
+			LIMIT $3`
+		args = []interface{}{query, "%" + query + "%", limit}
 	}
 
 	log.Printf("Executing query: %s with params: %v", searchQuery, args)
 
-	var scams []models.Scam
+	scams := make([]models.Scam, 0)
 	err := r.db.SelectContext(ctx, &scams, searchQuery, args...)
 	if err != nil {
 		log.Printf("Error executing search query: %v", err)
@@ -401,6 +407,15 @@ func (r *ScamRepository) AddScamReport(ctx context.Context, report *models.ScamR
 	}
 
 	return tx.Commit()
+}
+
+// IncrementReportCount bumps the report count and updates date_last_reported for a scam.
+func (r *ScamRepository) IncrementReportCount(ctx context.Context, id uuid.UUID) error {
+	_, err := r.db.ExecContext(ctx,
+		`UPDATE scams SET report_count = report_count + 1, date_last_reported = NOW(), updated_at = NOW() WHERE id = $1`,
+		id,
+	)
+	return err
 }
 
 // GetScamTypes returns all rows from the scam_types lookup table.

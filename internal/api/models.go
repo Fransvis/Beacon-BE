@@ -11,6 +11,8 @@ type CreateScamRequest struct {
 	Description     string                       `json:"description" binding:"required"`
 	Type            string                       `json:"type" binding:"required"`
 	EstimatedLosses float64                      `json:"estimatedLosses"`
+	MoneyDirection  *models.MoneyDirection       `json:"moneyDirection"`
+	ScammerNames    []string                     `json:"scammerNames"`
 	Locations       []models.Location            `json:"locations"`
 	ContactMethods  []models.ContactMethod       `json:"contactMethods"`
 	TransferMethods []models.MoneyTransferMethod `json:"transferMethods"`
