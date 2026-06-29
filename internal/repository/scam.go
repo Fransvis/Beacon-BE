@@ -36,9 +36,9 @@ func (r *ScamRepository) CreateScam(ctx context.Context, scam *models.Scam) erro
 			id, title, description, type, report_count,
 			date_first_reported, date_last_reported, status,
 			estimated_losses, primary_location, risk_level,
-			verification_status, created_at, updated_at
+			verification_status, scam_pattern, created_at, updated_at
 		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14
+			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
 		) RETURNING id`
 
 	err = tx.QueryRowContext(
@@ -56,6 +56,7 @@ func (r *ScamRepository) CreateScam(ctx context.Context, scam *models.Scam) erro
 		scam.PrimaryLocation,
 		scam.RiskLevel,
 		scam.VerificationStatus,
+		scam.ScamPattern,
 		scam.CreatedAt,
 		scam.UpdatedAt,
 	).Scan(&scam.ID)
@@ -110,6 +111,62 @@ func (r *ScamRepository) CreateScam(ctx context.Context, scam *models.Scam) erro
 	}
 
 	return tx.Commit()
+}
+
+// AddContactMethod adds a new contact method to an existing scam.
+func (r *ScamRepository) AddContactMethod(ctx context.Context, scamID uuid.UUID, cm *models.ContactMethod) error {
+	_, err := r.db.ExecContext(ctx,
+		`INSERT INTO contact_methods (scam_id, type, value, is_valid) VALUES ($1, $2, $3, $4)
+		 ON CONFLICT (scam_id, type, value) DO NOTHING`,
+		scamID, cm.Type, cm.Value, cm.IsValid)
+	if err != nil {
+		return fmt.Errorf("failed to add contact method: %v", err)
+	}
+	return r.touchScam(ctx, scamID)
+}
+
+// AddTransferMethod adds a new transfer method to an existing scam.
+func (r *ScamRepository) AddTransferMethod(ctx context.Context, scamID uuid.UUID, tm *models.MoneyTransferMethod) error {
+	_, err := r.db.ExecContext(ctx,
+		`INSERT INTO transfer_methods (scam_id, type, description) VALUES ($1, $2, $3)`,
+		scamID, tm.Type, tm.Description)
+	if err != nil {
+		return fmt.Errorf("failed to add transfer method: %v", err)
+	}
+	return r.touchScam(ctx, scamID)
+}
+
+// AddLocation adds a new location to an existing scam.
+func (r *ScamRepository) AddLocation(ctx context.Context, scamID uuid.UUID, loc *models.Location) error {
+	_, err := r.db.ExecContext(ctx,
+		`INSERT INTO locations (scam_id, city, province, country, report_count)
+		 VALUES ($1, $2, $3, $4, $5)
+		 ON CONFLICT (scam_id, city, province, country) DO NOTHING`,
+		scamID, loc.City, loc.Province, loc.Country, loc.ReportCount)
+	if err != nil {
+		return fmt.Errorf("failed to add location: %v", err)
+	}
+	return r.touchScam(ctx, scamID)
+}
+
+// AddKeyword adds a new keyword to an existing scam.
+func (r *ScamRepository) AddKeyword(ctx context.Context, scamID uuid.UUID, keyword string) error {
+	_, err := r.db.ExecContext(ctx,
+		`INSERT INTO keywords (scam_id, keyword) VALUES ($1, $2)
+		 ON CONFLICT (scam_id, keyword) DO NOTHING`,
+		scamID, keyword)
+	if err != nil {
+		return fmt.Errorf("failed to add keyword: %v", err)
+	}
+	return r.touchScam(ctx, scamID)
+}
+
+// touchScam updates the updated_at timestamp of a scam.
+func (r *ScamRepository) touchScam(ctx context.Context, scamID uuid.UUID) error {
+	_, err := r.db.ExecContext(ctx,
+		`UPDATE scams SET updated_at = NOW() WHERE id = $1`,
+		scamID)
+	return err
 }
 
 // GetScamByID retrieves a scam with all related data
@@ -253,17 +310,23 @@ func (r *ScamRepository) GetScamWithRelated(ctx context.Context, id uuid.UUID) (
 	return &scam, err
 }
 
-// SearchScams performs a full-text search on scams
-func (r *ScamRepository) SearchScams(ctx context.Context, query string, limit int) ([]models.Scam, error) {
-	log.Printf("Searching for scams with query: %s", query)
+// SearchScams performs a full-text search on scams and returns the matching page
+// along with the total number of matches.
+func (r *ScamRepository) SearchScams(ctx context.Context, query string, offset, limit int) ([]models.Scam, int, error) {
+	log.Printf("Searching for scams with query: %s, offset: %d, limit: %d", query, offset, limit)
 
+	var total int
 	var searchQuery string
 	var args []interface{}
 
 	if query == "" {
-		// If no search query provided, return all scams ordered by creation date
+		// Count all scams
+		if err := r.db.GetContext(ctx, &total, `SELECT COUNT(*) FROM scams`); err != nil {
+			return nil, 0, fmt.Errorf("failed to count scams: %v", err)
+		}
+
 		searchQuery = `
-			SELECT DISTINCT 
+			SELECT DISTINCT
 				s.id, s.title, s.description, s.type, s.report_count,
 				s.date_first_reported, s.date_last_reported, s.status,
 				s.estimated_losses, s.primary_location, s.risk_level,
@@ -272,10 +335,26 @@ func (r *ScamRepository) SearchScams(ctx context.Context, query string, limit in
 				0 as rank
 			FROM scams s
 			ORDER BY s.created_at DESC
-			LIMIT $1`
-		args = []interface{}{limit}
+			LIMIT $1 OFFSET $2`
+		args = []interface{}{limit, offset}
 	} else {
-		// Combine full-text search with ILIKE prefix matching for partial words
+		like := "%" + query + "%"
+
+		// Count matching scams
+		countQuery := `
+			SELECT COUNT(DISTINCT s.id)
+			FROM scams s
+			LEFT JOIN contact_methods cm ON cm.scam_id = s.id
+			WHERE
+				s.search_vector @@ plainto_tsquery('english', $1)
+				OR s.title ILIKE $2
+				OR s.description ILIKE $2
+				OR s.type ILIKE $2
+				OR cm.value ILIKE $2`
+		if err := r.db.GetContext(ctx, &total, countQuery, query, like); err != nil {
+			return nil, 0, fmt.Errorf("failed to count search results: %v", err)
+		}
+
 		searchQuery = `
 			SELECT DISTINCT
 				s.id, s.title, s.description, s.type, s.report_count,
@@ -293,8 +372,8 @@ func (r *ScamRepository) SearchScams(ctx context.Context, query string, limit in
 				OR s.type ILIKE $2
 				OR cm.value ILIKE $2
 			ORDER BY rank DESC
-			LIMIT $3`
-		args = []interface{}{query, "%" + query + "%", limit}
+			LIMIT $3 OFFSET $4`
+		args = []interface{}{query, like, limit, offset}
 	}
 
 	log.Printf("Executing query: %s with params: %v", searchQuery, args)
@@ -303,11 +382,11 @@ func (r *ScamRepository) SearchScams(ctx context.Context, query string, limit in
 	err := r.db.SelectContext(ctx, &scams, searchQuery, args...)
 	if err != nil {
 		log.Printf("Error executing search query: %v", err)
-		return nil, err
+		return nil, 0, err
 	}
 
-	log.Printf("Found %d scams", len(scams))
-	return scams, nil
+	log.Printf("Found %d scams (total %d)", len(scams), total)
+	return scams, total, nil
 }
 
 // FindSimilarScams finds scams with similar patterns or characteristics

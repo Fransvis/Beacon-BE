@@ -37,6 +37,10 @@ func SetupRouter(h *Handler, auth *AuthHandler) *gin.Engine {
 			scams.POST("/:id/experienced", h.ExperiencedScam)
 			scams.GET("/:id/comments", h.GetComments)
 			scams.POST("/:id/comments", h.CreateComment)
+			scams.POST("/:id/contact-methods", JWTMiddleware(), h.AddContactMethod)
+			scams.POST("/:id/transfer-methods", JWTMiddleware(), h.AddTransferMethod)
+			scams.POST("/:id/locations", JWTMiddleware(), h.AddLocation)
+			scams.POST("/:id/keywords", JWTMiddleware(), h.AddKeyword)
 		}
 
 		// Auth

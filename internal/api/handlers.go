@@ -41,13 +41,17 @@ type Handler struct {
 type ScamRepository interface {
 	CreateScam(ctx context.Context, scam *models.Scam) error
 	GetScamByID(ctx context.Context, id uuid.UUID) (*models.Scam, error)
-	SearchScams(ctx context.Context, query string, limit int) ([]models.Scam, error)
+	SearchScams(ctx context.Context, query string, offset, limit int) ([]models.Scam, int, error)
 	FindSimilarScams(ctx context.Context, scamID uuid.UUID, limit int) ([]models.Scam, error)
 	AddScamReport(ctx context.Context, report *models.ScamReport) error
 	IncrementReportCount(ctx context.Context, id uuid.UUID) error
 	LookupByIdentifier(ctx context.Context, identifier string) ([]models.Scam, error)
 	GetScamStatistics(ctx context.Context) (map[string]interface{}, error)
 	GetScamTypes(ctx context.Context) ([]models.ScamType, error)
+	AddContactMethod(ctx context.Context, scamID uuid.UUID, cm *models.ContactMethod) error
+	AddTransferMethod(ctx context.Context, scamID uuid.UUID, tm *models.MoneyTransferMethod) error
+	AddLocation(ctx context.Context, scamID uuid.UUID, loc *models.Location) error
+	AddKeyword(ctx context.Context, scamID uuid.UUID, keyword string) error
 }
 
 type CommentRepository interface {
@@ -198,26 +202,37 @@ func (h *Handler) GetScamByID(c *gin.Context, id uuid.UUID) (*models.Scam, error
 // @Accept json
 // @Produce json
 // @Param query query string false "Search query"
-// @Param limit query int false "Limit results" default(50)
-// @Success 200 {array} Scam
-// @Router /scams/search [get]
+// @Param offset query int false "Offset" default(0)
+// @Param limit query int false "Limit results" default(20)
+// @Success 200 {object} PaginatedScams
+// @Router /scams [get]
 func (h *Handler) SearchScams(c *gin.Context) {
 	query := c.Query("query")
-	limitStr := c.DefaultQuery("limit", "50")
-	limit, err := strconv.Atoi(limitStr)
-	if err != nil || limit <= 0 || limit > 200 {
-		limit = 50
-	}
-	log.Printf("Searching scams with query: %s, limit: %d", query, limit)
 
-	scams, err := h.scamRepo.SearchScams(c, query, limit)
+	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
+	if offset < 0 {
+		offset = 0
+	}
+
+	limit, err := strconv.Atoi(c.DefaultQuery("limit", "20"))
+	if err != nil || limit <= 0 || limit > 100 {
+		limit = 20
+	}
+
+	log.Printf("Searching scams with query: %s, offset: %d, limit: %d", query, offset, limit)
+
+	scams, total, err := h.scamRepo.SearchScams(c, query, offset, limit)
 	if err != nil {
 		log.Printf("Error searching scams: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to search scams"})
 		return
 	}
 
-	c.JSON(http.StatusOK, scams)
+	c.JSON(http.StatusOK, gin.H{
+		"scams":   scams,
+		"total":   total,
+		"hasMore": offset+len(scams) < total,
+	})
 }
 
 // CheckDuplicates checks whether a scam being submitted closely matches existing entries.
@@ -242,7 +257,7 @@ func (h *Handler) CheckDuplicates(c *gin.Context) {
 		searchQuery = req.ContactMethods[0].Value
 	}
 
-	candidates, err := h.scamRepo.SearchScams(c, searchQuery, 5)
+	candidates, _, err := h.scamRepo.SearchScams(c, searchQuery, 0, 5)
 	if err != nil {
 		log.Printf("Error checking duplicates: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to check duplicates"})
@@ -457,4 +472,111 @@ func (h *Handler) CreateComment(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, comment)
+}
+
+type AddContactMethodRequest struct {
+	Type  string `json:"type"  binding:"required,max=50"`
+	Value string `json:"value" binding:"required,max=255"`
+}
+
+type AddTransferMethodRequest struct {
+	Type        string `json:"type"        binding:"required,max=50"`
+	Description string `json:"description" binding:"max=500"`
+}
+
+type AddLocationRequest struct {
+	City     string `json:"city"     binding:"max=100"`
+	Province string `json:"province" binding:"max=100"`
+	Country  string `json:"country"  binding:"required,max=100"`
+}
+
+type AddKeywordRequest struct {
+	Keyword string `json:"keyword" binding:"required,max=100"`
+}
+
+func (h *Handler) AddContactMethod(c *gin.Context) {
+	scamID, err := uuid.FromString(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid scam ID"})
+		return
+	}
+
+	var req AddContactMethodRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	cm := &models.ContactMethod{Type: req.Type, Value: req.Value, IsValid: true}
+	if err := h.scamRepo.AddContactMethod(c, scamID, cm); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add contact method"})
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{"ok": true})
+}
+
+func (h *Handler) AddTransferMethod(c *gin.Context) {
+	scamID, err := uuid.FromString(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid scam ID"})
+		return
+	}
+
+	var req AddTransferMethodRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	tm := &models.MoneyTransferMethod{Type: req.Type, Description: req.Description}
+	if err := h.scamRepo.AddTransferMethod(c, scamID, tm); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add transfer method"})
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{"ok": true})
+}
+
+func (h *Handler) AddLocation(c *gin.Context) {
+	scamID, err := uuid.FromString(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid scam ID"})
+		return
+	}
+
+	var req AddLocationRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	loc := &models.Location{City: req.City, Province: req.Province, Country: req.Country, ReportCount: 1}
+	if err := h.scamRepo.AddLocation(c, scamID, loc); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add location"})
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{"ok": true})
+}
+
+func (h *Handler) AddKeyword(c *gin.Context) {
+	scamID, err := uuid.FromString(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid scam ID"})
+		return
+	}
+
+	var req AddKeywordRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := h.scamRepo.AddKeyword(c, scamID, req.Keyword); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to add keyword"})
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{"ok": true})
 }
