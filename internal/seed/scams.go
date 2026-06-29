@@ -118,10 +118,7 @@ func buildScam(template ScamTemplate, idx int) models.Scam {
 		lastReported = firstReported
 	}
 
-	reportCount := 1 + rand.Intn(50)
-	if template.Count > 0 {
-		reportCount = template.Count + rand.Intn(20)
-	}
+	reportCount := 1 + rand.Intn(5)
 
 	contactMethods := make([]models.ContactMethod, 0, len(template.ContactTypes))
 	for _, ct := range template.ContactTypes {
