@@ -41,10 +41,15 @@ func runMigrations(dbConfig *database.Config) {
 	}
 	defer m.Close()
 
-	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
-		log.Fatalf("Migration up failed: %v", err)
+	if err := m.Up(); err != nil {
+		if err == migrate.ErrNoChange {
+			log.Println("Migrations: no new migrations to apply")
+		} else {
+			log.Fatalf("Migration up failed: %v", err)
+		}
+	} else {
+		log.Println("Migrations applied successfully")
 	}
-	log.Println("Migrations applied successfully")
 }
 
 func main() {
