@@ -28,13 +28,13 @@ func SetupRouter(h *Handler, auth *AuthHandler) *gin.Engine {
 		// Scams
 		scams := v1.Group("/scams")
 		{
-			scams.POST("", h.CreateScam)
+			scams.POST("", OptionalJWTMiddleware(), h.CreateScam)
 			scams.GET("", h.SearchScams)
 			scams.POST("/check-duplicates", h.CheckDuplicates)
 			scams.GET("/:id", h.GetScam)
 			scams.GET("/:id/similar", h.FindSimilarScams)
 			scams.POST("/:id/report", h.ReportScam)
-			scams.POST("/:id/experienced", h.ExperiencedScam)
+			scams.POST("/:id/experienced", OptionalJWTMiddleware(), h.ExperiencedScam)
 			scams.GET("/:id/comments", h.GetComments)
 			scams.POST("/:id/comments", h.CreateComment)
 			scams.POST("/:id/contact-methods", JWTMiddleware(), h.AddContactMethod)
@@ -42,6 +42,9 @@ func SetupRouter(h *Handler, auth *AuthHandler) *gin.Engine {
 			scams.POST("/:id/locations", JWTMiddleware(), h.AddLocation)
 			scams.POST("/:id/keywords", JWTMiddleware(), h.AddKeyword)
 		}
+
+		// Me
+		v1.GET("/me/activity", JWTMiddleware(), h.GetMyActivity)
 
 		// Auth
 		authGroup := v1.Group("/auth")

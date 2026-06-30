@@ -52,6 +52,8 @@ type ScamRepository interface {
 	AddTransferMethod(ctx context.Context, scamID uuid.UUID, tm *models.MoneyTransferMethod) error
 	AddLocation(ctx context.Context, scamID uuid.UUID, loc *models.Location) error
 	AddKeyword(ctx context.Context, scamID uuid.UUID, keyword string) error
+	RecordExperience(ctx context.Context, scamID uuid.UUID, userID *string, ipHash string) error
+	GetMyActivity(ctx context.Context, userID string) (reported []models.Scam, experienced []models.Scam, err error)
 }
 
 type CommentRepository interface {
@@ -99,6 +101,12 @@ func (h *Handler) CreateScam(c *gin.Context) {
 	statusActive := models.StatusActive
 	riskMedium := models.RiskMedium
 
+	var reporterID *string
+	if uid, ok := c.Get("user_id"); ok {
+		s := uid.(string)
+		reporterID = &s
+	}
+
 	scam := &models.Scam{
 		ID:                 id,
 		Title:              &req.Title,
@@ -113,6 +121,7 @@ func (h *Handler) CreateScam(c *gin.Context) {
 		CreatedAt:          &now,
 		UpdatedAt:          &now,
 		VerificationStatus: &verificationStatus,
+		ReporterID:         reporterID,
 	}
 
 	// Log the scam creation attempt
@@ -380,7 +389,35 @@ func (h *Handler) ExperiencedScam(c *gin.Context) {
 		return
 	}
 
+	var userID *string
+	if uid, ok := c.Get("user_id"); ok {
+		s := uid.(string)
+		userID = &s
+	}
+	_ = h.scamRepo.RecordExperience(c, id, userID, ip)
+
 	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+// GetMyActivity returns scams the authenticated user reported or experienced.
+func (h *Handler) GetMyActivity(c *gin.Context) {
+	userID, ok := c.Get("user_id")
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "authentication required"})
+		return
+	}
+
+	reported, experienced, err := h.scamRepo.GetMyActivity(c, userID.(string))
+	if err != nil {
+		log.Printf("GetMyActivity error: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch activity"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"reported":    reported,
+		"experienced": experienced,
+	})
 }
 
 // GetScamTypes returns all rows from the scam_types lookup table.

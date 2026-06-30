@@ -108,6 +108,9 @@ type Scam struct {
 	Keywords    []string `json:"keywords" db:"-"`
 	ScamPattern *string  `json:"scamPattern,omitempty" db:"scam_pattern"`
 
+	// Reporter (nullable — anonymous reports allowed)
+	ReporterID *string `json:"reporterId,omitempty" db:"reporter_id"`
+
 	// Metadata
 	CreatedAt      *time.Time `json:"createdAt,omitempty" db:"created_at"`
 	UpdatedAt      *time.Time `json:"updatedAt,omitempty" db:"updated_at"`

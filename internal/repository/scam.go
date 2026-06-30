@@ -36,9 +36,9 @@ func (r *ScamRepository) CreateScam(ctx context.Context, scam *models.Scam) erro
 			id, title, description, type, report_count,
 			date_first_reported, date_last_reported, status,
 			estimated_losses, primary_location, risk_level,
-			verification_status, scam_pattern, created_at, updated_at
+			verification_status, scam_pattern, reporter_id, created_at, updated_at
 		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
+			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16
 		) RETURNING id`
 
 	err = tx.QueryRowContext(
@@ -57,6 +57,7 @@ func (r *ScamRepository) CreateScam(ctx context.Context, scam *models.Scam) erro
 		scam.RiskLevel,
 		scam.VerificationStatus,
 		scam.ScamPattern,
+		scam.ReporterID,
 		scam.CreatedAt,
 		scam.UpdatedAt,
 	).Scan(&scam.ID)
@@ -565,4 +566,43 @@ func (r *ScamRepository) GetScamStatistics(ctx context.Context) (map[string]inte
 		"scams_by_type":   scamsByType,
 		"scams_by_status": scamsByStatus,
 	}, nil
+}
+
+// RecordExperience inserts a row into scam_experiences, ignoring duplicate user+scam pairs.
+func (r *ScamRepository) RecordExperience(ctx context.Context, scamID uuid.UUID, userID *string, ipHash string) error {
+	query := `
+		INSERT INTO scam_experiences (scam_id, user_id, ip_hash)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (scam_id, user_id) DO NOTHING`
+	_, err := r.db.ExecContext(ctx, query, scamID, userID, ipHash)
+	return err
+}
+
+// GetMyActivity returns scams reported by or experienced by a user.
+func (r *ScamRepository) GetMyActivity(ctx context.Context, userID string) (reported []models.Scam, experienced []models.Scam, err error) {
+	baseSelect := `
+		SELECT DISTINCT
+			s.id, s.title, s.description, s.type, s.report_count,
+			s.date_first_reported, s.date_last_reported, s.status,
+			s.estimated_losses, s.primary_location, s.risk_level,
+			s.verification_status, s.scam_pattern, s.reporter_id,
+			s.created_at, s.updated_at, s.last_analyzed_at
+		FROM scams s`
+
+	reportedQuery := baseSelect + ` WHERE s.reporter_id = $1 ORDER BY s.created_at DESC`
+	experiencedQuery := baseSelect + `
+		JOIN scam_experiences se ON se.scam_id = s.id
+		WHERE se.user_id = $1 ORDER BY se.created_at DESC`
+
+	reported = make([]models.Scam, 0)
+	experienced = make([]models.Scam, 0)
+
+	if err = r.db.SelectContext(ctx, &reported, reportedQuery, userID); err != nil {
+		return nil, nil, fmt.Errorf("failed to fetch reported scams: %w", err)
+	}
+	if err = r.db.SelectContext(ctx, &experienced, experiencedQuery, userID); err != nil {
+		return nil, nil, fmt.Errorf("failed to fetch experienced scams: %w", err)
+	}
+
+	return reported, experienced, nil
 }
