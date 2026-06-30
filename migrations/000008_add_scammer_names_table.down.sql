@@ -1,0 +1,2 @@
+DROP TABLE IF EXISTS scammer_names;
+ALTER TABLE scams ADD COLUMN IF NOT EXISTS scammer_names TEXT[];

@@ -111,6 +111,23 @@ func (r *ScamRepository) CreateScam(ctx context.Context, scam *models.Scam) erro
 		}
 	}
 
+	// Insert scammer names if any
+	if len(scam.ScammerNames) > 0 {
+		nameQuery := `
+			INSERT INTO scammer_names (scam_id, name)
+			VALUES ($1, $2)`
+
+		for _, name := range scam.ScammerNames {
+			if name == "" {
+				continue
+			}
+			_, err = tx.ExecContext(ctx, nameQuery, scam.ID, name)
+			if err != nil {
+				return fmt.Errorf("failed to insert scammer name: %v", err)
+			}
+		}
+	}
+
 	return tx.Commit()
 }
 
@@ -184,6 +201,7 @@ func (r *ScamRepository) GetScamByID(ctx context.Context, id uuid.UUID) (*models
 		Evidence        json.RawMessage `db:"evidence"`
 		Keywords        json.RawMessage `db:"keywords"`
 		RelatedScamIDs  json.RawMessage `db:"related_scam_ids"`
+		ScammerNames    json.RawMessage `db:"scammer_names"`
 	}
 
 	var dbResult dbScam
@@ -239,7 +257,12 @@ func (r *ScamRepository) GetScamByID(ctx context.Context, id uuid.UUID) (*models
                 SELECT COALESCE(json_agg(rs.related_scam_id), '[]'::json)
                 FROM related_scams rs
                 WHERE rs.scam_id = s.id
-            ) as related_scam_ids
+            ) as related_scam_ids,
+            (
+                SELECT COALESCE(json_agg(sn.name), '[]'::json)
+                FROM scammer_names sn
+                WHERE sn.scam_id = s.id
+            ) as scammer_names
         FROM scams s
         WHERE s.id = $1;`
 
@@ -285,6 +308,10 @@ func (r *ScamRepository) GetScamByID(ctx context.Context, id uuid.UUID) (*models
 	}
 	if err := json.Unmarshal(dbResult.RelatedScamIDs, &scam.RelatedScamIDs); err != nil {
 		log.Printf("Error unmarshaling related scam IDs: %v", err)
+		return nil, err
+	}
+	if err := json.Unmarshal(dbResult.ScammerNames, &scam.ScammerNames); err != nil {
+		log.Printf("Error unmarshaling scammer names: %v", err)
 		return nil, err
 	}
 
@@ -590,7 +617,14 @@ func (r *ScamRepository) GetMyActivity(ctx context.Context, userID string) (repo
 		FROM scams s`
 
 	reportedQuery := baseSelect + ` WHERE s.reporter_id = $1 ORDER BY s.created_at DESC`
-	experiencedQuery := baseSelect + `
+	experiencedQuery := `
+		SELECT
+			s.id, s.title, s.description, s.type, s.report_count,
+			s.date_first_reported, s.date_last_reported, s.status,
+			s.estimated_losses, s.primary_location, s.risk_level,
+			s.verification_status, s.scam_pattern, s.reporter_id,
+			s.created_at, s.updated_at, s.last_analyzed_at
+		FROM scams s
 		JOIN scam_experiences se ON se.scam_id = s.id
 		WHERE se.user_id = $1 ORDER BY se.created_at DESC`
 

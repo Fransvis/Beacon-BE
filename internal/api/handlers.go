@@ -122,6 +122,8 @@ func (h *Handler) CreateScam(c *gin.Context) {
 		UpdatedAt:          &now,
 		VerificationStatus: &verificationStatus,
 		ReporterID:         reporterID,
+		MoneyDirection:     req.MoneyDirection,
+		ScammerNames:       req.ScammerNames,
 	}
 
 	// Log the scam creation attempt
@@ -155,6 +157,9 @@ func (h *Handler) CreateScam(c *gin.Context) {
 	scam.Evidence = []models.Evidence{}
 	scam.Keywords = []string{}
 	scam.RelatedScamIDs = []uuid.UUID{}
+	if scam.ScammerNames == nil {
+		scam.ScammerNames = []string{}
+	}
 
 	if err := h.scamRepo.CreateScam(c, scam); err != nil {
 		log.Printf("Failed to create scam: %v", err)
