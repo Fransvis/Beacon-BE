@@ -65,6 +65,7 @@ func SetupRouter(h *Handler, auth *AuthHandler) *gin.Engine {
 
 		// Statistics
 		v1.GET("/statistics", h.GetStatistics)
+		v1.GET("/summary", h.GetDailySummary)
 
 		// Health check
 		v1.GET("/health", func(c *gin.Context) {

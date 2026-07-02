@@ -47,6 +47,7 @@ type ScamRepository interface {
 	IncrementReportCount(ctx context.Context, id uuid.UUID) error
 	LookupByIdentifier(ctx context.Context, identifier string) ([]models.Scam, error)
 	GetScamStatistics(ctx context.Context) (map[string]interface{}, error)
+	GetDailySummary(ctx context.Context) (map[string]interface{}, error)
 	GetScamTypes(ctx context.Context) ([]models.ScamType, error)
 	AddContactMethod(ctx context.Context, scamID uuid.UUID, cm *models.ContactMethod) error
 	AddTransferMethod(ctx context.Context, scamID uuid.UUID, tm *models.MoneyTransferMethod) error
@@ -451,6 +452,16 @@ func (h *Handler) GetStatistics(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, stats)
+}
+
+func (h *Handler) GetDailySummary(c *gin.Context) {
+	summary, err := h.scamRepo.GetDailySummary(c)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get daily summary"})
+		return
+	}
+
+	c.JSON(http.StatusOK, summary)
 }
 
 // GetComments returns all comments for a scam.

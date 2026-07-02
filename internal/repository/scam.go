@@ -595,6 +595,147 @@ func (r *ScamRepository) GetScamStatistics(ctx context.Context) (map[string]inte
 	}, nil
 }
 
+// GetDailySummary returns a daily operational summary useful for quick health checks
+func (r *ScamRepository) GetDailySummary(ctx context.Context) (map[string]interface{}, error) {
+	query := `
+		SELECT
+			-- totals
+			(SELECT COUNT(*) FROM scams)                                                         AS total_scams,
+			(SELECT COUNT(*) FROM scams WHERE created_at >= NOW() - INTERVAL '24 hours')         AS new_scams_24h,
+			(SELECT COUNT(*) FROM scams WHERE created_at >= NOW() - INTERVAL '7 days')           AS new_scams_7d,
+			(SELECT COALESCE(SUM(report_count), 0) FROM scams)                                   AS total_reports,
+			(SELECT COALESCE(SUM(report_count), 0) FROM scams
+			   WHERE updated_at >= NOW() - INTERVAL '24 hours')                                  AS reports_24h,
+			-- users & comments
+			(SELECT COUNT(*) FROM users)                                                         AS total_users,
+			(SELECT COUNT(*) FROM users WHERE created_at >= NOW() - INTERVAL '24 hours')         AS new_users_24h,
+			(SELECT COUNT(*) FROM comments)                                                      AS total_comments,
+			(SELECT COUNT(*) FROM comments WHERE created_at >= NOW() - INTERVAL '24 hours')      AS new_comments_24h,
+			-- experiences
+			(SELECT COUNT(*) FROM scam_experiences)                                              AS total_experiences,
+			(SELECT COUNT(*) FROM scam_experiences WHERE created_at >= NOW() - INTERVAL '24 hours') AS experiences_24h`
+
+	row := r.db.QueryRowContext(ctx, query)
+
+	var (
+		totalScams     int64
+		newScams24h    int64
+		newScams7d     int64
+		totalReports   int64
+		reports24h     int64
+		totalUsers     int64
+		newUsers24h    int64
+		totalComments  int64
+		newComments24h int64
+		totalExp       int64
+		experiences24h int64
+	)
+
+	if err := row.Scan(
+		&totalScams, &newScams24h, &newScams7d,
+		&totalReports, &reports24h,
+		&totalUsers, &newUsers24h,
+		&totalComments, &newComments24h,
+		&totalExp, &experiences24h,
+	); err != nil {
+		return nil, err
+	}
+
+	// Top 5 scam types
+	typeRows, err := r.db.QueryContext(ctx, `
+		SELECT type, COUNT(*) AS cnt
+		FROM scams
+		GROUP BY type
+		ORDER BY cnt DESC
+		LIMIT 5`)
+	if err != nil {
+		return nil, err
+	}
+	defer typeRows.Close()
+	topTypes := []map[string]interface{}{}
+	for typeRows.Next() {
+		var t string
+		var cnt int64
+		if err := typeRows.Scan(&t, &cnt); err != nil {
+			continue
+		}
+		topTypes = append(topTypes, map[string]interface{}{"type": t, "count": cnt})
+	}
+
+	// Top 5 most reported scams
+	scamRows, err := r.db.QueryContext(ctx, `
+		SELECT id, title, report_count
+		FROM scams
+		ORDER BY report_count DESC
+		LIMIT 5`)
+	if err != nil {
+		return nil, err
+	}
+	defer scamRows.Close()
+	topScams := []map[string]interface{}{}
+	for scamRows.Next() {
+		var id, title string
+		var rc int64
+		if err := scamRows.Scan(&id, &title, &rc); err != nil {
+			continue
+		}
+		topScams = append(topScams, map[string]interface{}{"id": id, "title": title, "report_count": rc})
+	}
+
+	// 5 most recently added scams
+	recentRows, err := r.db.QueryContext(ctx, `
+		SELECT id, title, type, created_at
+		FROM scams
+		ORDER BY created_at DESC
+		LIMIT 5`)
+	if err != nil {
+		return nil, err
+	}
+	defer recentRows.Close()
+	recentScams := []map[string]interface{}{}
+	for recentRows.Next() {
+		var id, title, scamType string
+		var createdAt time.Time
+		if err := recentRows.Scan(&id, &title, &scamType, &createdAt); err != nil {
+			continue
+		}
+		recentScams = append(recentScams, map[string]interface{}{
+			"id":         id,
+			"title":      title,
+			"type":       scamType,
+			"created_at": createdAt,
+		})
+	}
+
+	return map[string]interface{}{
+		"generated_at": time.Now().UTC(),
+		"scams": map[string]interface{}{
+			"total":    totalScams,
+			"last_24h": newScams24h,
+			"last_7d":  newScams7d,
+		},
+		"reports": map[string]interface{}{
+			"total":    totalReports,
+			"last_24h": reports24h,
+		},
+		"users": map[string]interface{}{
+			"total":    totalUsers,
+			"last_24h": newUsers24h,
+		},
+		"comments": map[string]interface{}{
+			"total":    totalComments,
+			"last_24h": newComments24h,
+		},
+		"experiences": map[string]interface{}{
+			"total":    totalExp,
+			"last_24h": experiences24h,
+		},
+		"top_scam_types": topTypes,
+		"most_reported":  topScams,
+		"recently_added": recentScams,
+	}, nil
+}
+
 // RecordExperience inserts a row into scam_experiences, ignoring duplicate user+scam pairs.
 func (r *ScamRepository) RecordExperience(ctx context.Context, scamID uuid.UUID, userID *string, ipHash string) error {
 	query := `
